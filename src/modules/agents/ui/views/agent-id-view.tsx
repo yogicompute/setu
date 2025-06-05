@@ -53,7 +53,7 @@ export const AgentIdView = ({ agentId }: Props) => {
 
 		if (!ok) return;
 
-		removeAgent.mutate({ id: agentId });
+		await removeAgent.mutateAsync({ id: agentId });
 	};
 
 	const [updateAgentDialogOpen, setUpdateAgentDialogOpen] = useState(false);
