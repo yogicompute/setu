@@ -15,6 +15,6 @@ export type StreamTranscriptItem = {
 	speaker_id: string;
 	type: string;
 	text: string;
-	starts_ts: number;
+	start_ts: number;
 	stop_ts: number;
 };
