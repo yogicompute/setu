@@ -1,19 +1,15 @@
 import { EmtpyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
-import { BanIcon, VideoIcon } from "lucide-react";
+import { BanIcon, Undo2, VideoIcon } from "lucide-react";
 import Link from "next/link";
 
 interface Props {
 	meetingId: string;
-	onCancelMeeting: () => void;
 	isCancelling: boolean;
+	onShare: () => void;
 }
 
-export const UpcomingState = ({
-	meetingId,
-	onCancelMeeting,
-	isCancelling,
-}: Props) => {
+export const UpcomingState = ({ meetingId, isCancelling, onShare }: Props) => {
 	return (
 		<div className="bg-white rounded-lg px-4 py-5 flex flex-col gap-y-8 items-center justify-center">
 			<EmtpyState
@@ -23,12 +19,11 @@ export const UpcomingState = ({
 			/>
 			<div className="flex flex-col-reverse lg:flex-row lg:justify-center items-center gap-2 w-full">
 				<Button
-					onClick={onCancelMeeting}
+					onClick={onShare}
 					variant="secondary"
-					disabled={isCancelling}
 					className="w-full lg:w-auto">
-					<BanIcon />
-					Cancel meeting
+					<Undo2 style={{ transform: "scaleX(-1)" }} />
+					Share meeting Link
 				</Button>
 				<Button
 					disabled={isCancelling}
