@@ -41,10 +41,17 @@ export const AgentForm = ({
 					trpc.agents.getMany.queryOptions({})
 				);
 
+				await queryClient.invalidateQueries(
+					trpc.premium.getFreeUsage.queryOptions()
+				);
 				onSuccess?.();
 			},
 			onError: (err) => {
 				toast.error(err.message);
+
+				if (err.data?.code === "FORBIDDEN") {
+					router.push("/upgrade");
+				}
 			},
 		})
 	);

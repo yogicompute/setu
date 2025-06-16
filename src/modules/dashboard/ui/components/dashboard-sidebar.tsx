@@ -1,6 +1,7 @@
 "use client";
 
 import { BotIcon, StarIcon, VideoIcon } from "lucide-react";
+import { DashboardTrail } from "./dashboard-trail";
 
 import {
 	Sidebar,
@@ -115,6 +116,7 @@ export const DashboardSidebar = () => {
 				</SidebarGroup>
 			</SidebarContent>
 			<SidebarFooter className="text-white">
+				<DashboardTrail />	
 				<DashboardUserButton />
 			</SidebarFooter>
 		</Sidebar>
