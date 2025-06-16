@@ -18,6 +18,7 @@ import { ActiveState } from "../components/active-state";
 import { CancelledState } from "../components/cancelled-state";
 import { ProcessingState } from "../components/processing-state";
 import { CompletedState } from "../components/completed-state";
+import { ShareMeetingDialog } from "../components/share-meeting-dialog";
 
 interface Props {
 	meetingId: string;
@@ -38,6 +39,8 @@ export const MeetingIdView = ({ meetingId }: Props) => {
 
 	const [updateMeetingDialogOpen, setUpdateMeetingDialogOpen] =
 		useState(false);
+
+	const [shareMeetingDialogOpen, setShareMeetingDialogOpen] = useState(false);
 
 	const removeMeeting = useMutation(
 		trpc.meetings.remove.mutationOptions({
@@ -74,6 +77,11 @@ export const MeetingIdView = ({ meetingId }: Props) => {
 				onOpenChange={setUpdateMeetingDialogOpen}
 				initialValues={data}
 			/>
+			<ShareMeetingDialog
+				open={shareMeetingDialogOpen}
+				meetingId={meetingId}
+				onOpenChange={setShareMeetingDialogOpen}
+			/>
 			<div className="flex-1 py-4 px-4 md:px-8 flex flex-col gap-y-4">
 				<MeetingIdHeaderView
 					meetingId={meetingId}
@@ -88,8 +96,8 @@ export const MeetingIdView = ({ meetingId }: Props) => {
 				{isUpcoming && (
 					<UpcomingState
 						meetingId={meetingId}
-						onCancelMeeting={() => {}}
 						isCancelling={false}
+						onShare={() => setShareMeetingDialogOpen(true)}
 					/>
 				)}
 			</div>

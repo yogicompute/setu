@@ -28,7 +28,11 @@ const formShema = z.object({
 	password: z.string().min(1, { message: "Password is required" }),
 });
 
-export const SignInView = () => {
+interface Props {
+	callbackUrl: string | undefined;
+}
+
+export const SignInView = ({ callbackUrl }: Props) => {
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const router = useRouter();
@@ -40,11 +44,11 @@ export const SignInView = () => {
 			{
 				email: data.email,
 				password: data.password,
-				callbackURL: "/",
+				callbackURL: callbackUrl || "/",
 			},
 			{
 				onSuccess: () => {
-					router.push("/");
+					router.push(callbackUrl || "/");
 					setPending(false);
 				},
 				onError: (err) => {
@@ -61,7 +65,7 @@ export const SignInView = () => {
 		authClient.signIn.social(
 			{
 				provider: provider,
-				callbackURL: "/",
+				callbackURL: callbackUrl || "/",
 			},
 			{
 				onSuccess: () => {
