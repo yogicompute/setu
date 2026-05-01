@@ -6,19 +6,27 @@ import { createTRPCRouter, protectedProcedure } from "@/trpc/init";
 
 export const premiumRouter = createTRPCRouter({
 	getCurrentSubscription: protectedProcedure.query(async ({ ctx }) => {
-		const customer = await polarClient.customers.getStateExternal({
-			externalId: ctx.auth.user.id,
-		});
+		try {
+			const customer = await polarClient.customers.getStateExternal({
+				externalId: ctx.auth.user.id,
+			});
 
-		const subscription = customer.activeSubscriptions[0];
+			const subscription = customer.activeSubscriptions[0];
 
-		if (!subscription) return null;
+			if (!subscription) return null;
 
-		const product = await polarClient.products.get({
-			id: subscription.productId,
-		});
+			const product = await polarClient.products.get({
+				id: subscription.productId,
+			});
 
-		return product;
+			return product;
+		} catch (error: any) {
+			// Handle 404 when customer doesn't exist in Polar — treat as no subscription
+			if (error?.error === "ResourceNotFound" || error?.status === 404) {
+				return null;
+			}
+			throw error;
+		}
 	}),
 	getProducts: protectedProcedure.query(async () => {
 		const products = await polarClient.products.list({
@@ -30,14 +38,21 @@ export const premiumRouter = createTRPCRouter({
 		return products.result.items;
 	}),
 	getFreeUsage: protectedProcedure.query(async ({ ctx }) => {
-		const customer = await polarClient.customers.getStateExternal({
-			externalId: ctx.auth.user.id,
-		});
+		try {
+			const customer = await polarClient.customers.getStateExternal({
+				externalId: ctx.auth.user.id,
+			});
 
-		const subscription = customer.activeSubscriptions[0];
+			const subscription = customer.activeSubscriptions[0];
 
-		if (subscription) {
-			return null;
+			if (subscription) {
+				return null;
+			}
+		} catch (error: any) {
+			// Handle 404 when customer doesn't exist in Polar — treat as free-tier user
+			if (!(error?.error === "ResourceNotFound" || error?.status === 404)) {
+				throw error;
+			}
 		}
 
 		const [userMeetings] = await db

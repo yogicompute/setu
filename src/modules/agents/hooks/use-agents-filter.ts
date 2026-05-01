@@ -1,3 +1,5 @@
+"use client";
+
 import { DEFAULT_PAGE } from "@/constants";
 import { parseAsInteger, parseAsString, useQueryStates } from "nuqs";
 

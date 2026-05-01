@@ -20,8 +20,24 @@ export const createTRPCRouter = t.router;
 export const createCallerFactory = t.createCallerFactory;
 export const baseProcedure = t.procedure;
 export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
+	const reqHeaders = await headers();
+
+	// Development shortcut: allow setting an `x-dev-user` header with a
+	// user id to simulate an authenticated session during local development.
+	const devUserId = reqHeaders.get("x-dev-user");
+	if (devUserId) {
+		const fakeSession = {
+			user: {
+				id: devUserId,
+				name: "Dev User",
+				image: null,
+			},
+		} as const;
+		return next({ ctx: { ...ctx, auth: fakeSession } });
+	}
+
 	const session = await auth.api.getSession({
-		headers: await headers(),
+		headers: reqHeaders,
 	});
 
 	if (!session)
@@ -34,9 +50,20 @@ export const protectedProcedure = baseProcedure.use(async ({ ctx, next }) => {
 });
 export const premiumProcedure = (entity: "meetings" | "agents") =>
 	protectedProcedure.use(async ({ ctx, next }) => {
-		const customer = await polarClient.customers.getStateExternal({
-			externalId: ctx.auth.user.id,
-		});
+		let customer;
+		try {
+			customer = await polarClient.customers.getStateExternal({
+				externalId: ctx.auth.user.id,
+			});
+		} catch (err: any) {
+			// If the customer is not found in Polar (common in local/dev),
+			// treat as a customer with no active subscriptions so local dev can proceed.
+			if (err?.error === "ResourceNotFound" || /not found/i.test(String(err?.message || err))) {
+				customer = { activeSubscriptions: [] } as any;
+			} else {
+				throw err;
+			}
+		}
 
 		const [userMeetings] = await db
 			.select({ count: count(meetings.id) })

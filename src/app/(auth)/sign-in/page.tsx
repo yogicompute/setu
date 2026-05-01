@@ -4,7 +4,8 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 interface Props {
-	searchParams?: { callbackUrl?: string };
+	// `searchParams` may be a lazy/awaitable object in Next's server runtime.
+	searchParams?: { callbackUrl?: string } | Promise<{ callbackUrl?: string }>;
 }
 
 const page = async ({ searchParams }: Props) => {
@@ -12,10 +13,15 @@ const page = async ({ searchParams }: Props) => {
 		headers: await headers(),
 	});
 
-	const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL}	${searchParams?.callbackUrl}`;
+	// Await `searchParams` before accessing its properties to satisfy
+	// Next's sync-dynamic-apis requirement.
+	const sp = (await (searchParams as Promise<{ callbackUrl?: string }> | { callbackUrl?: string } | undefined)) || {};
+	const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ""}${sp.callbackUrl ?? ""}`;
+
 	if (!!session) {
 		redirect(callbackUrl || "/");
 	}
+
 	return <SignInView callbackUrl={callbackUrl} />;
 };
 
