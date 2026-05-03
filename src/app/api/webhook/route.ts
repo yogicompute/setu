@@ -242,74 +242,82 @@ export async function POST(req: NextRequest) {
 		}
 
 		if (userId !== existingAgent.id) {
-			const instructions = `
+			(async () => {
+				try {
+					const instructions = `
 			You are an AI assistant helping the user revisit a recently completed meeting.
 			Below is a summary of the meeting, generated from the transcript:
-			
+            
 			${existingMeeting.summary}
-			
+            
 			The following are your original instructions from the live meeting assistant. Please continue to follow these behavioral guidelines as you assist the user:
-			
+            
 			${existingAgent.instructions}
-			
+            
 			The user may ask questions about the meeting, request clarifications, or ask for follow-up actions.
 			Always base your responses on the meeting summary above.
-			
+            
 			You also have access to the recent conversation history between you and the user. Use the context of previous messages to provide relevant, coherent, and helpful responses. If the user's question refers to something discussed earlier, make sure to take that into account and maintain continuity in the conversation.
-			
+            
 			If the summary does not contain enough information to answer a question, politely let the user know.
-			
+            
 			Be concise, helpful, and focus on providing accurate information from the meeting and the ongoing conversation.
 			`;
 
-			const channel = streamChat.channel("messaging", channelId);
-			await channel.watch();
+					const channel = streamChat.channel("messaging", channelId);
+					await channel.watch();
 
-			const previousMessages = channel.state.messages
-				.slice(-5)
-				.filter((msg) => msg.text && msg.text.trim() !== "")
-				.map((message) => ({
-					role:
-						message.user?.id === existingAgent.id
-							? "assistant"
-							: "user",
-					content: message.text || "",
-				}));
+					const previousMessages = channel.state.messages
+						.slice(-5)
+						.filter((msg) => msg.text && msg.text.trim() !== "")
+						.map((message) => ({
+							role:
+								message.user?.id === existingAgent.id
+									? "assistant"
+									: "user",
+							content: message.text || "",
+						}));
 
-			const geminiPrompt = [
-				{ role: "system", content: instructions },
-				...previousMessages,
-				{ role: "user", content: text },
-			];
+					const geminiPrompt = [
+						{ role: "system", content: instructions },
+						...previousMessages,
+						{ role: "user", content: text },
+					];
 
-			const geminiResponse = await generateGeminiResponse(geminiPrompt);
+					const geminiResponse = await generateGeminiResponse(
+						geminiPrompt
+					);
 
-			if (!geminiResponse) {
-				return NextResponse.json(
-					{ error: "No response fromt gemini" },
-					{ status: 400 }
-				);
-			}
+					if (!geminiResponse) {
+						console.warn("No response from gen AI for message", {
+							channelId,
+						});
+						return;
+					}
 
-			const avatarUrl = generateAvatarUri({
-				seed: existingAgent.name,
-				variant: "botttsNeutral",
-			});
+					const avatarUrl = generateAvatarUri({
+						seed: existingAgent.name,
+						variant: "botttsNeutral",
+					});
 
-			streamChat.upsertUser({
-				id: existingAgent.id,
-				name: existingAgent.name,
-				image: avatarUrl,
-			});
+					await streamChat.upsertUser({
+						id: existingAgent.id,
+						name: existingAgent.name,
+						image: avatarUrl,
+					});
 
-			channel.sendMessage({
-				text: geminiResponse,
-				user: {
-					id: existingAgent.id,
-					name: existingAgent.name,
-					image: avatarUrl,
-				},
-			});
+					await channel.sendMessage({
+						text: geminiResponse,
+						user: {
+							id: existingAgent.id,
+							name: existingAgent.name,
+							image: avatarUrl,
+						},
+					});
+				} catch (err) {
+					console.error("webhook message processing failed", err);
+				}
+			})();
 		}
 	}
 
