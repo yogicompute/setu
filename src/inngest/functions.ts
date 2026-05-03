@@ -30,7 +30,7 @@ const summarizer = createAgent({
         - Mention of integration with Z
 	`.trim(),
 	model: gemini({
-		model: "gemini-1.5-flash",
+		model: "gemini-3-flash-preview",
 		apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY,
 	}),
 });

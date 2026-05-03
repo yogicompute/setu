@@ -36,7 +36,7 @@ async function generateGeminiResponse(
 	const lastMessage = messages[messages.length - 1];
 
 	const chat = genAI.chats.create({
-		model: "gemini-1.5-flash",
+		model: "gemini-3-flash-preview",
 		history,
 	});
 
