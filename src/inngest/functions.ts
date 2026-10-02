@@ -3,8 +3,7 @@ import { agents, meetings, user } from "@/db/schema";
 import { inngest } from "@/inngest/client";
 import { StreamTranscriptItem } from "@/modules/meetings/types";
 import { eq, inArray } from "drizzle-orm";
-import JSONL from "jsonl-parse-stringify";
-import { createAgent, gemini, openai, TextMessage } from "@inngest/agent-kit";
+import { createAgent, gemini } from "@inngest/agent-kit";
 import { GoogleGenAI } from "@google/genai";
 const ai = new GoogleGenAI({ apiKey: process.env.NEXT_PUBLIC_GEMINI_API_KEY });
 
@@ -64,12 +63,21 @@ export const meetingProcessing = inngest.createFunction(
   { id: "meetings/processing" },
   { event: "meeting/processing" },
   async ({ event, step }) => {
-    const response = await step.run("fetch-transcript", async () => {
-      return fetch(event.data.transcriptUrl).then((res) => res.text());
-    });
+    const transcript = await step.run("load-transcript", async () => {
+      const [meeting] = await db
+        .select({ transcript: meetings.transcript })
+        .from(meetings)
+        .where(eq(meetings.id, event.data.meetingId));
 
-    const transcript = await step.run("parse-transcript", async () => {
-      return JSONL.parse<StreamTranscriptItem>(response);
+      if (!meeting?.transcript) {
+        return [] as StreamTranscriptItem[];
+      }
+
+      try {
+        return JSON.parse(meeting.transcript) as StreamTranscriptItem[];
+      } catch {
+        return [] as StreamTranscriptItem[];
+      }
     });
 
     const transcriptWithSpeakers = await step.run("add-speakers", async () => {

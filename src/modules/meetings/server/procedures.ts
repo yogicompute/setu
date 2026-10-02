@@ -25,20 +25,15 @@ import {
 import { TRPCError } from "@trpc/server";
 import { meetingsInsertSchema, meetingsUpdateSchema } from "../schemas";
 import { MeetingStatus, StreamTranscriptItem } from "../types";
-import { streamVideo } from "@/lib/stream-video";
+import {
+	AccessToken,
+	RoomConfiguration,
+	RoomAgentDispatch,
+} from "livekit-server-sdk";
+import { AGENT_NAME } from "@/lib/livekit";
 import { generateAvatarUri } from "@/lib/avatar";
-import JSONL from "jsonl-parse-stringify";
-import { streamChat } from "@/lib/stream-chat";
 
 export const meetingsRouter = createTRPCRouter({
-	generateChatToken: protectedProcedure.mutation(async ({ ctx }) => {
-		const token = streamChat.createToken(ctx.auth.user.id);
-		await streamChat.upsertUser({
-			id: ctx.auth.user.id,
-			role: "admin",
-		});
-		return token;
-	}),
 	getTranscript: protectedProcedure
 		.input(z.object({ id: z.string() }))
 		.query(async ({ input, ctx }) => {
@@ -59,16 +54,18 @@ export const meetingsRouter = createTRPCRouter({
 				});
 			}
 
-			if (!existingMeeting.transcriptUrl) {
+			if (!existingMeeting.transcript) {
 				return [];
 			}
 
-			const transcript = await fetch(existingMeeting.transcriptUrl)
-				.then((res) => res.text())
-				.then((text) => JSONL.parse<StreamTranscriptItem>(text))
-				.catch(() => {
-					return [];
-				});
+			let transcript: StreamTranscriptItem[] = [];
+			try {
+				transcript = JSON.parse(
+					existingMeeting.transcript
+				) as StreamTranscriptItem[];
+			} catch {
+				transcript = [];
+			}
 
 			const speakerIds = [
 				...new Set(transcript.map((item) => item.speaker_id)),
@@ -135,30 +132,81 @@ export const meetingsRouter = createTRPCRouter({
 
 			return transcriptWithSpeakers;
 		}),
-	generateToken: protectedProcedure.mutation(async ({ ctx }) => {
-		await streamVideo.upsertUsers([
-			{
-				id: ctx.auth.user.id,
-				name: ctx.auth.user.name,
-				role: "admin",
-				image:
-					ctx.auth.user.image ??
-					generateAvatarUri({
-						seed: ctx.auth.user.name,
-						variant: "initials",
-					}),
-			},
-		]);
-		const expirationTime = Math.floor(Date.now() / 1000) + 3600; // 1hr
-		const issuedAt = Math.floor(Date.now() / 1000) - 60;
+	generateToken: protectedProcedure
+		.input(z.object({ meetingId: z.string() }))
+		.mutation(async ({ ctx, input }) => {
+			const [existingMeeting] = await db
+				.select()
+				.from(meetings)
+				.where(
+					and(
+						eq(meetings.id, input.meetingId),
+						eq(meetings.userId, ctx.auth.user.id)
+					)
+				);
 
-		const token = streamVideo.generateUserToken({
-			user_id: ctx.auth.user.id,
-			exp: expirationTime,
-			validity_in_seconds: issuedAt,
-		});
-		return token;
-	}),
+			if (!existingMeeting) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Meeting not found",
+				});
+			}
+
+			const [existingAgent] = await db
+				.select()
+				.from(agents)
+				.where(eq(agents.id, existingMeeting.agentId));
+
+			if (!existingAgent) {
+				throw new TRPCError({
+					code: "NOT_FOUND",
+					message: "Agent not found",
+				});
+			}
+
+			const at = new AccessToken(
+				process.env.LIVEKIT_API_KEY!,
+				process.env.LIVEKIT_API_SECRET!,
+				{
+					identity: ctx.auth.user.id,
+					name: ctx.auth.user.name,
+					metadata: JSON.stringify({
+						image:
+							ctx.auth.user.image ??
+							generateAvatarUri({
+								seed: ctx.auth.user.name,
+								variant: "initials",
+							}),
+					}),
+					ttl: 60 * 60, // 1hr
+				}
+			);
+
+			at.addGrant({
+				roomJoin: true,
+				room: input.meetingId,
+				canPublish: true,
+				canSubscribe: true,
+			});
+
+			// Auto-dispatch the AI agent worker into this room on creation,
+			// passing everything the worker needs via dispatch metadata.
+			at.roomConfig = new RoomConfiguration({
+				agents: [
+					new RoomAgentDispatch({
+						agentName: AGENT_NAME,
+						metadata: JSON.stringify({
+							meetingId: existingMeeting.id,
+							agentId: existingAgent.id,
+							agentName: existingAgent.name,
+							instructions: existingAgent.instructions,
+						}),
+					}),
+				],
+			});
+
+			return await at.toJwt();
+		}),
 	create: premiumProcedure("meetings")
 		.input(meetingsInsertSchema)
 		.mutation(async ({ input, ctx }) => {
@@ -166,28 +214,11 @@ export const meetingsRouter = createTRPCRouter({
 				.insert(meetings)
 				.values({ ...input, userId: ctx.auth.user.id })
 				.returning();
-			const call = streamVideo.video.call("default", createdMeeting.id);
-			await call.create({
-				data: {
-					created_by_id: ctx.auth.user.id,
-					custom: {
-						meetingId: createdMeeting.id,
-						meetingName: createdMeeting.name,
-					},
-					settings_override: {
-						transcription: {
-							language: "en",
-							mode: "auto-on",
-							closed_caption_mode: "auto-on",
-						},
-						recording: {
-							mode: "auto-on",
-							quality: "1080p",
-						},
-					},
-				},
-			});
 
+			// The LiveKit room is created lazily when the first participant
+			// joins (room name === meetingId). The agent worker is dispatched
+			// into it by the room_started webhook, so there is nothing to
+			// pre-provision here.
 			const [existingAgent] = await db
 				.select()
 				.from(agents)
@@ -200,17 +231,6 @@ export const meetingsRouter = createTRPCRouter({
 				});
 			}
 
-			await streamVideo.upsertUsers([
-				{
-					id: existingAgent.id,
-					name: existingAgent.name,
-					role: "user",
-					image: generateAvatarUri({
-						seed: existingAgent.name,
-						variant: "botttsNeutral",
-					}),
-				},
-			]);
 			return createdMeeting;
 		}),
 	update: protectedProcedure

@@ -4,15 +4,6 @@ import { useEffect, useState } from "react";
 import { useTRPC } from "@/trpc/client";
 import { useMutation } from "@tanstack/react-query";
 
-import {
-	Call,
-	CallingState,
-	StreamCall,
-	StreamVideo,
-	StreamVideoClient,
-} from "@stream-io/video-react-sdk";
-
-import "@stream-io/video-react-sdk/dist/css/styles.css";
 import { CallUI } from "./call-ui";
 
 interface Props {
@@ -23,56 +14,27 @@ interface Props {
 	userImage: string;
 }
 
-export const CallConnect = ({
-	meetingId,
-	meetingName,
-	userId,
-	userImage,
-	userName,
-}: Props) => {
+export const CallConnect = ({ meetingId, meetingName, userName }: Props) => {
 	const trpc = useTRPC();
 	const { mutateAsync: generateToken } = useMutation(
 		trpc.meetings.generateToken.mutationOptions()
 	);
 
-	const [client, setClient] = useState<StreamVideoClient>();
+	const [token, setToken] = useState<string>();
 
 	useEffect(() => {
-		const _client = new StreamVideoClient({
-			apiKey: process.env.NEXT_PUBLIC_STREAM_VIDEO_API_KEY!,
-			user: {
-				id: userId,
-				name: userName,
-				image: userImage,
-			},
-			tokenProvider: generateToken,
-		});
-
-		setClient(_client);
+		let active = true;
+		generateToken({ meetingId })
+			.then((t) => {
+				if (active) setToken(t);
+			})
+			.catch((err) => console.error("Failed to get LiveKit token", err));
 		return () => {
-			_client.disconnectUser();
-			setClient(undefined);
+			active = false;
 		};
-	}, [userId, userName, userImage, generateToken]);
+	}, [meetingId, generateToken]);
 
-	const [call, setCall] = useState<Call>();
-
-	useEffect(() => {
-		if (!client) return;
-		const _call = client.call("default", meetingId);
-		_call.camera.disable();
-		_call.microphone.disable();
-		setCall(_call);
-		return () => {
-			if (_call.state.callingState !== CallingState.LEFT) {
-				_call.leave();
-				_call.endCall();
-				setCall(undefined);
-			}
-		};
-	}, [client, meetingId]);
-
-	if (!client || !call) {
+	if (!token) {
 		return (
 			<div className="flex h-screen items-center justify-center bg-radial from-sidebar-accent to-sidebar">
 				<Loader2Icon className="size-6 animate-spin text-white" />
@@ -81,10 +43,11 @@ export const CallConnect = ({
 	}
 
 	return (
-		<StreamVideo client={client}>
-			<StreamCall call={call}>
-				<CallUI meetingName={meetingName} />
-			</StreamCall>
-		</StreamVideo>
+		<CallUI
+			meetingName={meetingName}
+			token={token}
+			serverUrl={process.env.NEXT_PUBLIC_LIVEKIT_URL!}
+			userName={userName}
+		/>
 	);
 };
